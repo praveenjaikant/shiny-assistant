@@ -14,7 +14,6 @@ from urllib.parse import parse_qs
 from openai import APIStatusError, AsyncOpenAI, RateLimitError
 from app_utils import load_dotenv
 from htmltools import Tag
-from langfuse import get_client
 from shiny import App, Inputs, Outputs, Session, reactive, render, ui
 from shiny.ui._card import CardItem
 
@@ -32,15 +31,7 @@ if api_key is None:
 
 # email_sig_key = os.environ.get("EMAIL_SIGNATURE_KEY", None)
 
-langfuse = get_client()
 
-# Verify connection
-if langfuse.auth_check():
-    print("Langfuse client is authenticated and ready!")
-else:
-    print(
-        "Authentication failed. Please check your LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, and LANGFUSE_HOST environment variables."
-    )
 app_dir = Path(__file__).parent
 
 
