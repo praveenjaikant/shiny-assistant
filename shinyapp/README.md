@@ -6,7 +6,7 @@ Shiny Assistant implemented in Shiny for Python
 
 This is a Shiny for Python application, so you will need Python installed on your system.
 
-Get an Anthropic API key from [Anthropic](https://console.anthropic.com/).
+Get an OpenAI API key from [OpenAI](https://platform.openai.com/api-keys).
 
 You can run this Shiny application locally on your computer, or you can deploy to a hosted service like [shinyapps.io](https://www.shinyapps.io/) (Posit's managed cloud hosting service) or your own server running [Posit Connect](https://posit.co/products/enterprise/connect/) (Posit's hosting platform which you run on your own server).
 
@@ -20,10 +20,10 @@ pip install -r requirements.txt
 ```
 
 
-Create a file `.env` that contains your Anthropic API key:
+Create a file `.env` that contains your OpenAI API key:
 
 ```
-ANTHROPIC_API_KEY="xxxxxxxxxxxxxxxxx"
+OPENAI_API_KEY="xxxxxxxxxxxxxxxxx"
 ```
 
 You can also include these optional environment variables:

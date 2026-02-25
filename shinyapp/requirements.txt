@@ -1,7 +1,6 @@
 shiny
 python-dotenv
 tokenizers
-anthropic
 
 # For emails
 google-auth
@@ -15,4 +14,3 @@ requests
 # For instrumentation
 openai
 langfuse
-opentelemetry-instrumentation-anthropic

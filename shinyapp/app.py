@@ -7,18 +7,14 @@ import base64
 import json
 import os
 import re
-from copy import deepcopy
 from pathlib import Path
 from typing import Literal, TypedDict, cast
 from urllib.parse import parse_qs
 
-from anthropic import APIStatusError, AsyncAnthropic, RateLimitError
-from anthropic.types import CacheControlEphemeralParam, MessageParam
+from openai import APIStatusError, AsyncOpenAI, RateLimitError
 from app_utils import load_dotenv
 from htmltools import Tag
 from langfuse import get_client
-from local_types import MessageParam2
-from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
 from shiny import App, Inputs, Outputs, Session, reactive, render, ui
 from shiny.ui._card import CardItem
 
@@ -30,9 +26,9 @@ SHINYLIVE_BASE_URL = "https://shinylive.io/"
 # Environment variables
 
 load_dotenv()
-api_key = os.environ.get("ANTHROPIC_API_KEY")
+api_key = os.environ.get("OPENAI_API_KEY")
 if api_key is None:
-    raise ValueError("Please set the ANTHROPIC_API_KEY environment variable.")
+    raise ValueError("Please set the OPENAI_API_KEY environment variable.")
 
 google_analytics_id = os.environ.get("GOOGLE_ANALYTICS_ID", None)
 
@@ -43,7 +39,6 @@ langfuse = get_client()
 # Verify connection
 if langfuse.auth_check():
     print("Langfuse client is authenticated and ready!")
-    AnthropicInstrumentor().instrument()
 else:
     print(
         "Authentication failed. Please check your LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, and LANGFUSE_HOST environment variables."
@@ -129,7 +124,7 @@ app_ui = ui.page_sidebar(
                         ui.input_password(
                             "api_key",
                             None,
-                            placeholder="Anthropic API key",
+                            placeholder="OpenAI API key",
                         ),
                     ),
                 ),
@@ -266,9 +261,9 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.calc
     def llm():
         if input.use_api_key():
-            return AsyncAnthropic(api_key=input.api_key())
+            return AsyncOpenAI(api_key=input.api_key())
         else:
-            return AsyncAnthropic(api_key=api_key)
+            return AsyncOpenAI(api_key=api_key)
 
     @reactive.calc
     def app_prompt() -> str:
@@ -362,23 +357,16 @@ def server(input: Inputs, output: Outputs, session: Session):
         nonlocal restoring
         restoring = False
 
-        messages: tuple[MessageParam, ...] = (
-            chat.messages(  # pyright: ignore[reportUnknownMemberType]
-                token_limits=(32000, 6000), format="anthropic"
-            )
+        raw_messages = chat.messages(  # pyright: ignore[reportUnknownMemberType]
+            token_limits=(32000, 6000), format="openai"
         )
 
-        # messages2 is a MessageParam2, which helps with type checking here. We
-        # will assign it back to messages later.
-        messages2 = normalize_messages(messages)
-        messages2 = add_cache_breakpoints_to_messages(messages2)
+        messages = normalize_openai_messages(raw_messages)
+        if len(messages) == 0:
+            return
 
-        # We add this last message part after adding the cache breakpoint,
-        # because this message part will not be used in future message turns.
-        messages2[-1]["content"].append(
-            {
-                "type": "text",
-                "text": f"""
+        messages[-1]["content"] += f"""
+
 <CONTEXT>
 The following is the current app code in JSON format. The text that came before this app
 code might ask you to modify the code. If , please modify the code. If the text
@@ -388,26 +376,15 @@ did not ask you to modify the code, then ignore the code.
 {input.editor_code()}
 ```
 </CONTEXT>
-""",
-            }
-        )
-
-        messages = cast(tuple[MessageParam, ...], messages2)
+"""
 
         await sync_latest_messages()
 
         # Create a response message stream
         try:
-            response_stream = await llm().messages.create(
-                model="claude-sonnet-4-5",
-                system=[
-                    {
-                        "type": "text",
-                        "text": app_prompt(),
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-                messages=messages,
+            response_stream = await llm().chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "system", "content": app_prompt()}, *messages],
                 stream=True,
                 max_tokens=3000,
             )
@@ -421,18 +398,9 @@ did not ask you to modify the code, then ignore the code.
         async def logging_stream_wrapper():
             try:
                 async for chunk in response_stream:
-                    if (
-                        chunk.type == "content_block_delta"
-                        and chunk.delta.type == "text_delta"
-                    ):
-                        ...
-                        # print(chunk.delta.text, end="")
-                    else:
-                        ...
-                        # Uncomment to view other chunks, which include response metadata
-                        # print(json.dumps(chunk.model_dump(), indent=2))
-                    yield chunk
-                # print("")
+                    text = chunk.choices[0].delta.content
+                    if text is not None:
+                        yield text
             except Exception as e:
                 await check_for_overload(e)
                 raise
@@ -445,7 +413,7 @@ did not ask you to modify the code, then ignore the code.
             await chat.append_message(
                 {
                     "role": "assistant",
-                    "content": "**Error:** Shiny Assistant has exceeded its Anthropic rate limit. Please try again later, or provide your own Anthropic API key using the gear icon above.",
+                    "content": "**Error:** Shiny Assistant has exceeded its OpenAI rate limit. Please try again later, or provide your own OpenAI API key using the gear icon above.",
                 }
             )
         elif isinstance(e, APIStatusError):
@@ -453,7 +421,7 @@ did not ask you to modify the code, then ignore the code.
                 await chat.append_message(
                     {
                         "role": "assistant",
-                        "content": "**Error:** Shiny Assistant's access to Anthropic is currently overloaded. Please try again later, or provide your own Anthropic API key using the gear icon above.",
+                        "content": "**Error:** Shiny Assistant's access to OpenAI is currently overloaded. Please try again later, or provide your own OpenAI API key using the gear icon above.",
                     }
                 )
 
@@ -548,15 +516,15 @@ did not ask you to modify the code, then ignore the code.
 </style>
 <div class="privacy-notice" style="list-style-type: lower-roman;">
 
-Shiny Assistant is a chatbot that uses [Anthropic's](https://www.anthropic.com/) Claude service and other tools and services. Any queries, data and/or other information you submit to Shiny Assistant will be processed by Posit and Anthropic and their third party subprocessors.
+Shiny Assistant is a chatbot that uses [OpenAI's](https://openai.com/) models and other tools and services. Any queries, data and/or other information you submit to Shiny Assistant will be processed by Posit and OpenAI and their third party subprocessors.
 
 Posit makes Shiny Assistant available "as is" and without warranty and assumes no liability for Shiny Assistant or your use of Shiny Assistant, including without limitation any processing of your data or the outputs produced by your use of Shiny Assistant.
 
 By using Shiny Assistant:
 
-1. you agree to Posit's [Terms of Service](https://posit.co/about/posit-service-terms-of-use/) and [Privacy Policy](https://posit.co/about/privacy-policy/) and Anthropic's policies including without limitation Anthropic's [Privacy Policy](https://www.anthropic.com/legal/privacy) and [Usage Policy](https://www.anthropic.com/legal/aup),
-2. you agree to cooperate with Anthropic's reasonable requests for information to support compliance with its Usage Policy, including to verify your identity and use of the Anthropic services and
-3. you agree that you will not submit any personal information or data or sensitive data that is subject to regulations such as HIPAA, Gramm-Leach Bliley, or other similar laws, rules or regulations which impose data privacy or security obligations or use Shiny Assistant for High Risk Use Cases as defined in the Anthropic Usage Policy.
+1. you agree to Posit's [Terms of Service](https://posit.co/about/posit-service-terms-of-use/) and [Privacy Policy](https://posit.co/about/privacy-policy/) and OpenAI's policies including without limitation OpenAI's [Privacy Policy](https://openai.com/policies/privacy-policy/) and [Usage Policies](https://openai.com/policies/usage-policies/),
+2. you agree to cooperate with OpenAI's reasonable requests for information to support compliance with its Usage Policy, including to verify your identity and use of the OpenAI services and
+3. you agree that you will not submit any personal information or data or sensitive data that is subject to regulations such as HIPAA, Gramm-Leach Bliley, or other similar laws, rules or regulations which impose data privacy or security obligations or use Shiny Assistant for High Risk Use Cases as defined in the OpenAI Usage Policies.
 
 
 If you do not agree to the foregoing, do not use Shiny Assistant.
@@ -598,7 +566,7 @@ If you do not agree to the foregoing, do not use Shiny Assistant.
 
         with reactive.isolate():
             messages = chat.messages(  # pyright: ignore[reportUnknownMemberType]
-                format="anthropic",
+                format="openai",
                 token_limits=None,
                 transform_user="all",
                 transform_assistant=False,
@@ -640,106 +608,34 @@ def shinyapp_tag_contents_to_filecontents(input: str) -> list[FileContent]:
     return file_contents
 
 
-# Remove any consecutive user or assistant messages. Only keep the last one in a
-# sequence. For example, if there are multiple user messages in a row, only keep the
-# last one. This is helpful for when the user sends multiple messages in a row, which
-# can happen if there was an error handling the previous message.
-def remove_consecutive_messages(
-    messages: tuple[MessageParam, ...],
-) -> tuple[MessageParam, ...]:
-    if len(messages) < 2:
-        return messages
+# Normalize chat messages into OpenAI-compatible role/content dictionaries.
+def normalize_openai_messages(messages: tuple[object, ...]) -> list[dict[str, str]]:
+    normalized_messages: list[dict[str, str]] = []
 
-    new_messages: list[MessageParam] = []
-    for i in range(len(messages) - 1):
-        if messages[i]["role"] != messages[i + 1]["role"]:
-            new_messages.append(messages[i])
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
 
-    new_messages.append(messages[-1])
+        role = message.get("role")
+        if role not in {"user", "assistant"}:
+            continue
 
-    return tuple(new_messages)
-
-
-# Normalize messages so that insteaed of content being a string, it is a
-# dictionary with "role" and "content" keys. This is so that the format
-# is stable
-def normalize_messages(
-    messages: tuple[MessageParam, ...],
-) -> tuple[MessageParam2, ...]:
-    normalized_messages: list[MessageParam2] = []
-    for msg in messages:
-        content = msg["content"]
+        content = message.get("content")
         if isinstance(content, str):
+            normalized_messages.append({"role": role, "content": content})
+            continue
+
+        if isinstance(content, list):
+            text_blocks = [
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            ]
             normalized_messages.append(
-                {"role": "user", "content": [{"type": "text", "text": content}]}
+                {"role": role, "content": "\n".join(text_blocks)}
             )
-        else:
-            if "role" not in msg or "content" not in msg:
-                raise ValueError(
-                    "Message must be a dictionary with 'role' and 'content' keys."
-                )
-            new_msg: MessageParam2 = msg.copy()  # pyright: ignore[reportAssignmentType]
-            normalized_messages.append(new_msg)
 
-    return tuple(normalized_messages)
-
-
-def add_cache_breakpoints_to_messages(
-    messages: list[MessageParam2] | tuple[MessageParam2, ...],
-    max_cache_breakpoints: int = 3,
-) -> tuple[MessageParam2, ...]:
-    """
-    Add cache breakpoints to a list/tuple of messages.
-
-    Parameters
-    ----------
-    messages
-        The messages to transform
-    max_cache_breakpoints
-        Maximum number of user messages to transform. This defaults to 3, because
-        Anthropic's prompt caching only supports 4 total breakpoints, and there is
-        already one in the system prompt.
-
-    Returns
-    -------
-    list[MessageParam2]
-        The transformed messages in prompt caching format
-    """
-    transformed: list[MessageParam2] = []
-    user_messages_transformed = 0
-
-    for msg in reversed(messages):
-        if msg["role"] == "user" and user_messages_transformed < max_cache_breakpoints:
-            content = deepcopy(msg["content"])
-            content_last_part = deepcopy(content[-1])
-            if (
-                content_last_part["type"] == "thinking"
-                or content_last_part["type"] == "redacted_thinking"
-            ):
-                # Can't add cache-control to these blocks
-                ...
-            else:
-                # Mark the last item in the content as ephemeral
-                cache_control: CacheControlEphemeralParam = {"type": "ephemeral"}
-                content_last_part["cache_control"] = cache_control
-
-            content[-1] = content_last_part
-
-            transformed.insert(
-                0,
-                {
-                    "role": "user",
-                    "content": content,
-                },
-            )
-            user_messages_transformed += 1
-        else:
-            # Keep assistant messages as is. We're checking for string content mostly
-            # to make the type checker happy.
-            content = msg["content"]
-            transformed.insert(0, {"role": msg["role"], "content": content})
-
-    return tuple(transformed)
+    return normalized_messages
 
 
 # ======================================================================================
