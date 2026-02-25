@@ -190,7 +190,23 @@ app_ui = ui.page_sidebar(
             else None
         ),
     ),
-    ui.output_ui("shinylive_iframe"),
+    ui.div(
+        ui.div(
+            ui.div(
+                ui.tags.span("Canvas", class_="canvas-title"),
+                ui.tags.span("Live app preview", class_="canvas-subtitle"),
+                class_="canvas-title-group",
+            ),
+            ui.div(
+                ui.tags.span("Shiny", class_="canvas-pill"),
+                ui.output_text("canvas_language_badge"),
+                class_="canvas-toolbar",
+            ),
+            class_="canvas-header",
+        ),
+        ui.div(ui.output_ui("shinylive_iframe"), class_="canvas-body"),
+        class_="canvas-shell",
+    ),
     ui.tags.template(
         ui.modal(
             "Your session has been disconnected due to inactivity or network "
@@ -330,9 +346,13 @@ def server(input: Inputs, output: Outputs, session: Session):
         return ui.tags.iframe(
             id="shinylive-panel",
             src=url,
-            style="flex: 1 1 auto;",
+            style="flex: 1 1 auto; width: 100%; height: 100%; border: 0;",
             allow="clipboard-write",
         )
+
+    @render.text
+    def canvas_language_badge() -> str:
+        return "Python" if language() == "python" else "R"
 
     # TODO: Instead of using this hack for submitting editor content, use
     # @chat.on_user_submit. This will require some changes to the chat component.
