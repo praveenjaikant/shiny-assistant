@@ -183,6 +183,15 @@ just borrowed from the `:checked` state for switches.*/
   line-height: 1.6;
 }
 
+
+.canvas-document-editor {
+  width: 100%;
+  min-height: 100%;
+  color: #141a27;
+  line-height: 1.6;
+  outline: none;
+}
+
 .canvas-document h1,
 .canvas-document h2,
 .canvas-document h3 {
