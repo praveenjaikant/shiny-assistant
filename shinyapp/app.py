@@ -181,8 +181,8 @@ app_ui = ui.page_sidebar(
     ui.div(
         ui.div(
             ui.div(
-                ui.tags.span("Canvas", class_="canvas-title"),
-                ui.tags.span("Live app preview", class_="canvas-subtitle"),
+                ui.tags.span("Open Canvas", class_="canvas-title"),
+                ui.tags.span("Draft + live preview workspace", class_="canvas-subtitle"),
                 class_="canvas-title-group",
             ),
             ui.div(
@@ -192,7 +192,19 @@ app_ui = ui.page_sidebar(
             ),
             class_="canvas-header",
         ),
-        ui.div(ui.output_ui("shinylive_iframe"), class_="canvas-body"),
+        ui.div(
+            ui.div(
+                ui.output_ui("canvas_document"),
+                ui.div(ui.output_ui("shinylive_iframe"), class_="canvas-preview-wrap"),
+                class_="canvas-main-column",
+            ),
+            ui.div(
+                ui.div("Search Results", class_="canvas-sources-title"),
+                ui.output_ui("canvas_sources"),
+                class_="canvas-sources-column",
+            ),
+            class_="canvas-body",
+        ),
         class_="canvas-shell",
     ),
     ui.tags.template(
@@ -306,6 +318,15 @@ def server(input: Inputs, output: Outputs, session: Session):
         shinylive_panel_visible_smooth_transition.set(False)
         shinylive_panel_visible.set(True)
 
+    latest_canvas_content = reactive.value(
+        "# Welcome to Open Canvas\n\nAsk for a summary, brainstorm, or a Shiny app. Your latest assistant response appears here."
+    )
+
+    for msg in reversed(restored_messages):
+        if msg.get("role") == "assistant":
+            latest_canvas_content.set(strip_shinyapp_markup(msg.get("content", "")))
+            break
+
     chat = ui.Chat(
         "chat",
         messages=restored_messages,
@@ -341,6 +362,36 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.text
     def canvas_language_badge() -> str:
         return "Python" if language() == "python" else "R"
+
+    @render.ui
+    def canvas_document():
+        return ui.div(
+            ui.markdown(latest_canvas_content()),
+            class_="canvas-document",
+        )
+
+    @render.ui
+    def canvas_sources():
+        urls = extract_urls(latest_canvas_content())
+        if len(urls) == 0:
+            return ui.div(
+                "No links yet. Ask for web-style summaries and include URLs in prompts.",
+                class_="canvas-empty-sources",
+            )
+
+        cards = []
+        for url in urls[:8]:
+            cards.append(
+                ui.a(
+                    ui.div(url_label(url), class_="canvas-source-url"),
+                    ui.div(url, class_="canvas-source-domain"),
+                    href=url,
+                    target="_blank",
+                    class_="canvas-source-card",
+                )
+            )
+
+        return ui.div(*cards, class_="canvas-sources-list")
 
     # TODO: Instead of using this hack for submitting editor content, use
     # @chat.on_user_submit. This will require some changes to the chat component.
@@ -471,6 +522,8 @@ did not ask you to modify the code, then ignore the code.
         )
         content = content.replace("\n</FILE>", "\n```\n</div>")
 
+        latest_canvas_content.set(strip_shinyapp_markup(content))
+
         return content
 
     @reactive.effect
@@ -599,6 +652,36 @@ def shinyapp_tag_contents_to_filecontents(input: str) -> list[FileContent]:
         file_contents.append({"name": name, "content": content, "type": "text"})
 
     return file_contents
+
+
+
+
+def strip_shinyapp_markup(content: str) -> str:
+    content = re.sub(
+        r'<SHINYAPP AUTORUN="[01]">.*?</SHINYAPP>',
+        "\n\n_Shiny app code was generated in chat. Use **Run app →** to preview it._\n",
+        content,
+        flags=re.DOTALL,
+    )
+    content = re.sub(r'<FILE NAME=".*?">', "", content)
+    content = content.replace("</FILE>", "")
+    return content.strip()
+
+
+def extract_urls(content: str) -> list[str]:
+    found = re.findall(r"https?://[^\s)\]>]+", content)
+    deduped: list[str] = []
+    for url in found:
+        cleaned = url.rstrip(".,;:")
+        if cleaned not in deduped:
+            deduped.append(cleaned)
+    return deduped
+
+
+def url_label(url: str) -> str:
+    label = re.sub(r"^https?://", "", url)
+    label = label.split("/")[0]
+    return label or url
 
 
 # Normalize chat messages into OpenAI-compatible role/content dictionaries.
