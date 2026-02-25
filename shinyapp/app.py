@@ -357,10 +357,10 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.ui
     def canvas_document():
         return ui.div(
-            ui.tags.textarea(
-                latest_canvas_content(),
+            ui.div(
+                ui.markdown(latest_canvas_content()),
                 class_="canvas-document-editor",
-                spellcheck="true",
+                contenteditable="true",
             ),
             class_="canvas-document",
         )
