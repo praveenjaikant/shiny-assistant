@@ -1,13 +1,8 @@
 shiny
 python-dotenv
 tokenizers
-anthropic
 
 # For emails
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
-google-api-python-client
 markdown
 pandas
 requests
@@ -15,4 +10,3 @@ requests
 # For instrumentation
 openai
 langfuse
-opentelemetry-instrumentation-anthropic
