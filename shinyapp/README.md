@@ -28,7 +28,6 @@ OPENAI_API_KEY="xxxxxxxxxxxxxxxxx"
 
 You can also include these optional environment variables:
 
-* `GOOGLE_ANALYTICS_ID` - Google Analytics ID to use for tracking page views. If provided, the Google Analytics tracking code will be included in the app.
 
 Run the app locally:
 

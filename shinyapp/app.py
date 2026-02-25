@@ -30,8 +30,6 @@ api_key = os.environ.get("OPENAI_API_KEY")
 if api_key is None:
     raise ValueError("Please set the OPENAI_API_KEY environment variable.")
 
-google_analytics_id = os.environ.get("GOOGLE_ANALYTICS_ID", None)
-
 # email_sig_key = os.environ.get("EMAIL_SIGNATURE_KEY", None)
 
 langfuse = get_client()
@@ -179,11 +177,6 @@ app_ui = ui.page_sidebar(
         ui.tags.title("Shiny Assistant"),
         ui.tags.style(read_file("style.css")),
         ui.tags.script(read_file("scripts.js")),
-        (
-            ui.HTML((read_file("gtag.html")) % google_analytics_id)
-            if google_analytics_id is not None
-            else None
-        ),
     ),
     ui.div(
         ui.div(
