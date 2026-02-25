@@ -190,7 +190,7 @@ app_ui = ui.page_sidebar(
                 class_="canvas-main-column",
             ),
             ui.div(
-                ui.div("Search Results", class_="canvas-sources-title"),
+                ui.div("Next Step", class_="canvas-sources-title"),
                 ui.output_ui("canvas_sources"),
                 class_="canvas-sources-column",
             ),
@@ -357,32 +357,20 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.ui
     def canvas_document():
         return ui.div(
-            ui.markdown(latest_canvas_content()),
+            ui.tags.textarea(
+                latest_canvas_content(),
+                class_="canvas-document-editor",
+                spellcheck="true",
+            ),
             class_="canvas-document",
         )
 
     @render.ui
     def canvas_sources():
-        urls = extract_urls(latest_canvas_content())
-        if len(urls) == 0:
-            return ui.div(
-                "No links yet. Ask for web-style summaries and include URLs in prompts.",
-                class_="canvas-empty-sources",
-            )
-
-        cards = []
-        for url in urls[:8]:
-            cards.append(
-                ui.a(
-                    ui.div(url_label(url), class_="canvas-source-url"),
-                    ui.div(url, class_="canvas-source-domain"),
-                    href=url,
-                    target="_blank",
-                    class_="canvas-source-card",
-                )
-            )
-
-        return ui.div(*cards, class_="canvas-sources-list")
+        return ui.div(
+            "Look at the generated content on the Canvas and proceed accordingly.",
+            class_="canvas-empty-sources",
+        )
 
     # TODO: Instead of using this hack for submitting editor content, use
     # @chat.on_user_submit. This will require some changes to the chat component.
